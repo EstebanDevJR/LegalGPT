@@ -1,0 +1,27 @@
+{
+  "name": "legalgpt",
+  "version": "1.0.0",
+  "description": "Asistente legal inteligente para PyMEs colombianas",
+  "scripts": {
+    "frontend": "cd frontend && npm run dev",
+    "backend": "cd backend && python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload",
+    "dev": "concurrently \"npm run backend\" \"npm run frontend\"",
+    "install-all": "cd frontend && npm install && cd ../backend && pip install -r requirements.txt",
+    "build": "cd frontend && npm run build"
+  },
+  "devDependencies": {
+    "autoprefixer": "^10.4.21",
+    "tailwindcss": "^4.1.11",
+    "concurrently": "^8.2.2"
+  },
+  "keywords": [
+    "legal",
+    "ai",
+    "pymes",
+    "colombia",
+    "chatbot",
+    "legal-tech"
+  ],
+  "author": "LegalGPT Team",
+  "license": "MIT"
+}
