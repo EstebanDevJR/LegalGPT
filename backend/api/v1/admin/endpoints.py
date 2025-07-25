@@ -1,5 +1,5 @@
 from fastapi import APIRouter, HTTPException
-from services.error_handler import log_error, ErrorType, ErrorSeverity
+from services.monitoring.error_handler import log_error, ErrorType, ErrorSeverity
 
 router = APIRouter()
 

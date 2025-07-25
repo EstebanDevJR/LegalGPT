@@ -1,5 +1,5 @@
 from supabase import create_client, Client
-from config import SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY
+from core.config import SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY
 import asyncio
 from typing import Optional
 

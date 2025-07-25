@@ -2,9 +2,9 @@ from datetime import datetime, timedelta
 from typing import Dict, Any, Optional
 from fastapi import HTTPException, status
 
-from db import get_supabase
+from core.database import get_supabase
 from models.usage import UsageCreate, UsageStats, UsageLimits
-from config import WEEKLY_QUERY_LIMIT, DAILY_QUERY_LIMIT
+from core.config import WEEKLY_QUERY_LIMIT, DAILY_QUERY_LIMIT
 
 class UsageService:
     def __init__(self):

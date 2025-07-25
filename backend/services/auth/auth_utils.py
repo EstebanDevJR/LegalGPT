@@ -6,9 +6,9 @@ from datetime import datetime, timedelta
 from typing import Optional
 import os
 
-from db import get_supabase, create_user_profile, get_user_by_id
+from core.database import get_supabase, create_user_profile, get_user_by_id
 from models.user import UserCreate, UserLogin, TokenResponse, UserResponse
-from config import SECRET_KEY, ALGORITHM, ACCESS_TOKEN_EXPIRE_MINUTES
+from core.config import SECRET_KEY, ALGORITHM, ACCESS_TOKEN_EXPIRE_MINUTES
 
 # Configuración de seguridad
 security = HTTPBearer()

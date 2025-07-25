@@ -1,16 +1,14 @@
 """
 Rutas de la API LegalGPT
 
-Contiene todos los endpoints REST organizados por funcionalidad:
-- auth: Autenticación y gestión de usuarios
-- rag: Consultas legales con IA
-- documents: Subida y procesamiento de documentos
+NOTA: Los routers han sido migrados a la estructura api/v1/
+- auth: api/v1/auth/endpoints.py
+- legal: api/v1/legal/endpoints.py  
+- documents: api/v1/documents/endpoints.py
+- admin: api/v1/admin/endpoints.py
+- testing: api/v1/testing/endpoints.py
 """
 
-from . import auth, rag, documents
+# Los routers están ahora en api/v1/ - eliminar imports para evitar import circular
 
-__all__ = [
-    "auth",
-    "rag", 
-    "documents"
-] 
+__all__ = [] 

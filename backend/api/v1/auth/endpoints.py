@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, Depends
 from datetime import datetime
 from models.auth import UserRegister, UserLogin, TokenResponse, UserResponse
-from services.auth_service import auth_service, get_current_user
+from services.auth.auth_service import auth_service, get_current_user
 
 router = APIRouter()
 

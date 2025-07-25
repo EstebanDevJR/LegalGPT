@@ -8,7 +8,7 @@ from typing import List, Dict, Any, Optional
 import os
 import time
 
-from config import (
+from core.config import (
     PINECONE_API_KEY, 
     PINECONE_ENVIRONMENT, 
     PINECONE_INDEX_NAME, 

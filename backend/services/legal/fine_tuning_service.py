@@ -6,7 +6,7 @@ from typing import Dict, Any, List, Optional
 from datetime import datetime
 import time
 
-from services.error_handler import log_error, log_success, ErrorType, ErrorSeverity
+from services.monitoring.error_handler import log_error, log_success, ErrorType, ErrorSeverity
 
 class FineTuningService:
     """Servicio para fine-tuning de modelos GPT especializados en PyMEs colombianas"""

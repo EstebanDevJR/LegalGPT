@@ -1,8 +1,8 @@
 from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Form
 from typing import Optional
 from models.documents import DocumentResponse, DocumentListResponse, SupportedFormatsResponse
-from services.document_service import document_service
-from services.auth_service import get_current_user
+from services.documents.document_service import document_service
+from services.auth.auth_service import get_current_user
 
 router = APIRouter()
 

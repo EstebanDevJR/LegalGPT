@@ -7,7 +7,7 @@ from fastapi import HTTPException, UploadFile
 from datetime import datetime
 import PyPDF2
 
-from db import get_supabase
+from core.database import get_supabase
 
 # Configuración
 UPLOAD_DIR = Path("uploads")

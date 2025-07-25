@@ -1,8 +1,8 @@
 from fastapi import APIRouter, HTTPException, BackgroundTasks
 from typing import Dict, Any, List, Optional
-from services.fine_tuning_service import fine_tuning_service
-from services.rag_service import rag_service
-from services.error_handler import log_error, log_success, ErrorType, ErrorSeverity
+from services.legal.fine_tuning_service import fine_tuning_service
+from services.legal.rag import rag_service
+from services.monitoring.error_handler import log_error, log_success, ErrorType, ErrorSeverity
 import os
 
 router = APIRouter()
@@ -212,56 +212,6 @@ async def collect_real_interactions(interactions: List[Dict[str, Any]]):
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error procesando interacciones: {str(e)}")
-
-@router.post("/start")
-async def start_fine_tuning(
-    background_tasks: BackgroundTasks,
-    training_file: str = "backend/data/fine_tuning/legalgpt_training_dataset.jsonl",
-    model: str = "gpt-4o-mini-2024-07-18"
-):
-    """
-    🚀 Iniciar proceso de fine-tuning
-    
-    Sube el dataset a OpenAI e inicia el entrenamiento del modelo.
-    El proceso puede tomar 20-60 minutos dependiendo del tamaño del dataset.
-    
-    **Parámetros:**
-    - `training_file`: Ruta al archivo JSONL con los datos
-    - `model`: Modelo base a entrenar (gpt-4o-mini-2024-07-18)
-    
-    **Costo estimado:**
-    - GPT-4o-mini: ~$3.00 per 1M tokens
-    - Para 100 ejemplos: ~$3-5 USD
-    """
-    try:
-        # Verificar que existe el archivo
-        if not os.path.exists(training_file):
-            raise HTTPException(
-                status_code=404, 
-                detail=f"Archivo de entrenamiento no encontrado: {training_file}"
-            )
-        
-        # Iniciar fine-tuning
-        job_id = await fine_tuning_service.start_fine_tuning(training_file, model)
-        
-        return {
-            "success": True,
-            "message": "Fine-tuning iniciado exitosamente",
-            "job_id": job_id,
-            "status": "validating",
-            "model": model,
-            "training_file": training_file,
-            "estimated_time": "20-60 minutos",
-            "estimated_cost": f"${fine_tuning_service._estimate_cost(model)} USD",
-            "next_steps": [
-                f"1. Monitorear progreso con /fine-tuning/status/{job_id}",
-                "2. Una vez completado, integrar modelo a RAG service",
-                "3. Probar mejoras en calidad de respuestas"
-            ]
-        }
-        
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error iniciando fine-tuning: {str(e)}")
 
 @router.get("/status/{job_id}")
 async def check_fine_tuning_status(job_id: str):

@@ -9,8 +9,8 @@ from time import sleep
 
 # Agregar el directorio parent al path para importar config
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
-from config import PINECONE_API_KEY, PINECONE_INDEX_NAME, OPENAI_API_KEY, validate_config
-from services.pdf_parser import LegalPDFParser
+from core.config import PINECONE_API_KEY, PINECONE_INDEX_NAME, OPENAI_API_KEY, validate_config
+from services.documents.pdf_parser import LegalPDFParser
 
 # Validar configuración antes de continuar
 validate_config()

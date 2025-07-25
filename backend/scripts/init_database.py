@@ -20,7 +20,7 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent))
 
 from supabase import create_client
-from config import SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
+from core.config import SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
 import time
 
 class DatabaseInitializer:

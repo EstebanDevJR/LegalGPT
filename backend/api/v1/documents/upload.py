@@ -5,11 +5,11 @@ import os
 import time
 from pathlib import Path
 
-from services.auth_utils import get_current_user
-from services.pdf_parser import parse_pdf_content
+from services.auth.auth_utils import get_current_user
+from services.documents.pdf_parser import parse_pdf_content
 from services.llm_chain import rag_service
 from models.usage import DocumentResponse
-from db import get_supabase
+from core.database import get_supabase
 
 router = APIRouter()
 

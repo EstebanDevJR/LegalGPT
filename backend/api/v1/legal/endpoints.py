@@ -1,9 +1,9 @@
 from fastapi import APIRouter, HTTPException, Depends
 from models.rag import QueryRequest, QueryResponse, QuerySuggestionsResponse, QueryExamplesResponse
-from services.rag_service import rag_service
-from services.document_service import document_service
-from services.auth_service import get_current_user_optional
-from services.usage_service import usage_service
+from services.legal.rag import rag_service
+from services.documents.document_service import document_service
+from services.auth.auth_service import get_current_user_optional
+from services.monitoring.usage_service import usage_service
 import time
 
 router = APIRouter()
@@ -106,6 +106,8 @@ async def make_legal_query(
             tokens_used=result.get("tokens_used", 0)
         )
     
+    # Asegurar que response_time esté en el resultado
+    result["response_time"] = response_time
     return QueryResponse(**result)
 
 @router.get("/suggestions", response_model=QuerySuggestionsResponse)

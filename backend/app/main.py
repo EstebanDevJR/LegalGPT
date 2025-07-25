@@ -9,7 +9,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 # Importar el sistema de manejo de errores
-from services.error_handler import error_handler, ErrorType, ErrorSeverity, log_error
+from services.monitoring.error_handler import error_handler, ErrorType, ErrorSeverity, log_error
 
 # Cargar variables de entorno
 load_dotenv()
@@ -151,54 +151,49 @@ async def health_check():
         }
         
     except Exception as e:
-        error_id = log_error(e, ErrorType.SYSTEM, ErrorSeverity.HIGH)
+        error_id = log_error(e, ErrorType.SYSTEM, context={"health_check": "failed"})
         raise HTTPException(
             status_code=500,
             detail=f"Error en health check. Error ID: {error_id}"
         )
 
-# Importar y registrar routers
+# Importar y registrar routers (nueva estructura API v1)
 try:
-    from routes.auth import router as auth_router
-    app.include_router(auth_router, prefix="/auth", tags=["🔐 Authentication"])
+    from api.v1.auth.endpoints import router as auth_router
+    app.include_router(auth_router, prefix="/api/v1/auth", tags=["🔐 Authentication"])
 except ImportError as e:
-    log_error(e, ErrorType.SYSTEM, ErrorSeverity.HIGH, context={"router": "auth"})
+    log_error(e, ErrorType.SYSTEM, context={"router": "auth"})
     print(f"⚠️  No se pudo importar auth router: {e}")
 
 try:
-    from routes.documents import router as documents_router
-    app.include_router(documents_router, prefix="/documents", tags=["📄 Documents"])
+    from api.v1.documents.endpoints import router as documents_router
+    app.include_router(documents_router, prefix="/api/v1/documents", tags=["📄 Documents"])
 except ImportError as e:
-    log_error(e, ErrorType.SYSTEM, ErrorSeverity.HIGH, context={"router": "documents"})
+    log_error(e, ErrorType.SYSTEM, context={"router": "documents"})
     print(f"⚠️  No se pudo importar documents router: {e}")
 
 try:
-    from routes.rag import router as rag_router
-    app.include_router(rag_router, prefix="/rag", tags=["🧠 RAG Queries"])
+    from api.v1.legal.endpoints import router as legal_router
+    app.include_router(legal_router, prefix="/api/v1/legal", tags=["🧠 Legal Queries"])
 except ImportError as e:
-    log_error(e, ErrorType.SYSTEM, ErrorSeverity.HIGH, context={"router": "rag"})
-    print(f"⚠️  No se pudo importar rag router: {e}")
+    log_error(e, ErrorType.SYSTEM, context={"router": "legal"})
+    print(f"⚠️  No se pudo importar legal router: {e}")
 
 try:
-    from routes.fine_tuning import router as fine_tuning_router
-    app.include_router(fine_tuning_router, prefix="/fine-tuning", tags=["🎯 Fine-Tuning"])
+    from api.v1.admin.fine_tuning import router as fine_tuning_router
+    app.include_router(fine_tuning_router, prefix="/api/v1/admin/fine-tuning", tags=["🎯 Fine-Tuning"])
 except ImportError as e:
-    log_error(e, ErrorType.SYSTEM, ErrorSeverity.MEDIUM, context={"router": "fine_tuning"})
+    log_error(e, ErrorType.SYSTEM, context={"router": "fine_tuning"})
     print(f"⚠️  No se pudo importar fine-tuning router: {e}")
 
 try:
-    from routes.testing import router as testing_router
+    from api.v1.testing.endpoints import router as testing_router
     app.include_router(testing_router, prefix="/test", tags=["🧪 Testing"])
 except ImportError as e:
-    log_error(e, ErrorType.SYSTEM, ErrorSeverity.LOW, context={"router": "testing"})
+    log_error(e, ErrorType.SYSTEM, context={"router": "testing"})
     print(f"⚠️  No se pudo importar testing router: {e}")
 
-try:
-    from routes.admin import router as admin_router
-    app.include_router(admin_router, prefix="/admin", tags=["⚙️ Administration"])
-except ImportError as e:
-    log_error(e, ErrorType.SYSTEM, ErrorSeverity.LOW, context={"router": "admin"})
-    print(f"⚠️  No se pudo importar admin router: {e}")
+# Eliminar el bloque try/except que importa y registra routes.admin
 
 # Endpoint de información de la API
 @app.get("/info")

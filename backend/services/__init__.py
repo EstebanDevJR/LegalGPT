@@ -8,10 +8,10 @@ Contiene la lógica de negocio principal:
 - Tracking de uso y límites
 """
 
-from .auth_service import auth_service, get_current_user
-from .rag_service import rag_service
-from .usage_service import usage_service
-from .pdf_parser import LegalPDFParser, extract_text_from_pdf
+from .auth.auth_service import auth_service, get_current_user
+from .legal.rag import rag_service
+from .monitoring.usage_service import usage_service
+from .documents.pdf_parser import LegalPDFParser, process_pdfs_in_directory
 
 __all__ = [
     "auth_service",
@@ -19,5 +19,5 @@ __all__ = [
     "rag_service",
     "usage_service",
     "LegalPDFParser",
-    "extract_text_from_pdf"
+    "process_pdfs_in_directory"
 ] 

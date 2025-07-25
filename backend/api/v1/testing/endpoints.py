@@ -1,5 +1,5 @@
 from fastapi import APIRouter, HTTPException
-from services.error_handler import log_error, ErrorType, ErrorSeverity
+from services.monitoring.error_handler import log_error, ErrorType, ErrorSeverity
 
 router = APIRouter()
 
@@ -7,7 +7,7 @@ router = APIRouter()
 async def test_vectorstore():
     """Probar conexión con Pinecone"""
     try:
-        from services.rag_service import rag_service
+        from services.legal.rag import rag_service
         if rag_service.vectorstore:
             stats = rag_service.vectorstore.describe_index_stats()
             return {
@@ -35,7 +35,7 @@ async def test_vectorstore():
 async def test_database():
     """Probar conexión con Supabase"""
     try:
-        from db import get_supabase
+        from core.database import get_supabase
         supabase = get_supabase()
         result = supabase.table('user_profiles').select('id').limit(1).execute()
         
@@ -57,7 +57,7 @@ async def test_database():
 async def test_ai():
     """Probar respuesta de IA"""
     try:
-        from services.rag_service import rag_service
+        from services.legal.rag import rag_service
         result = await rag_service.query(
             question="¿Qué es una SAS?",
             context=[],
