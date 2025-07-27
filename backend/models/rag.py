@@ -20,27 +20,34 @@ class QueryResponse(BaseModel):
     """Respuesta de consulta legal"""
     answer: str
     confidence: float
-    response_time: int
-    query_type: str
-    sources: List[str] = []
-    used_documents: List[str] = []
+    sources: List[Dict[str, Any]] = []
+    category: str
+    suggestions: Optional[List[str]] = []
+    tokens_used: Optional[int] = 0
     
     class Config:
         json_schema_extra = {
             "example": {
                 "answer": "Para constituir una SAS en Colombia necesitas...",
                 "confidence": 0.9,
-                "response_time": 1500,
-                "query_type": "Constitución de Empresa",
-                "sources": ["Legislación Colombiana", "Código de Comercio"],
-                "used_documents": ["contrato_servicios.pdf"]
+                "sources": [
+                    {
+                        "title": "Código de Comercio",
+                        "content": "Artículo 2...",
+                        "relevance": 0.95
+                    }
+                ],
+                "category": "Constitución de Empresa",
+                "suggestions": ["¿Qué documentos necesito?", "¿Cuánto cuesta?"],
+                "tokens_used": 150
             }
         }
 
 class QuerySuggestion(BaseModel):
     """Sugerencia de consulta"""
     category: str
-    queries: List[str]
+    question: str
+    description: str
 
 class QuerySuggestionsResponse(BaseModel):
     """Respuesta con sugerencias de consultas"""

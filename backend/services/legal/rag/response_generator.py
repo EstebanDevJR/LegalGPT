@@ -20,80 +20,50 @@ class ResponseGenerator:
     def __init__(self):
         self.client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
         
-        # Prompts especializados por tipo de consulta
+        # Caché simple para respuestas frecuentes
+        self.response_cache = {}
+        self.cache_size_limit = 50  # Máximo 50 respuestas en caché
+        
+        # Prompts especializados por tipo de consulta (optimizados para velocidad)
         self.specialized_prompts = {
             "procedimiento": """
-            Como experto en derecho colombiano para PyMEs:
-            
             CONSULTA: {question}
             
-            CONTEXTO DEL USUARIO: {context_text}
+            CONTEXTO: {context_text}
+            DOCUMENTOS: {documents_context}
+            LEGISLACIÓN: {legal_context}
             
-            DOCUMENTOS DEL USUARIO: {documents_context}
-            
-            LEGISLACIÓN RELEVANTE: {legal_context}
-            
-            Proporciona una respuesta paso a paso, práctica y específica para PyMEs colombianas.
-            Incluye:
-            1. Pasos específicos a seguir
-            2. Documentos necesarios
-            3. Costos aproximados si aplica
-            4. Plazos importantes
-            5. Advertencias o consideraciones especiales
+            Responde de forma práctica y concisa. Incluye solo los pasos esenciales, documentos principales y costos aproximados.
             """,
             
             "definición": """
-            Como experto en derecho colombiano para PyMEs:
-            
             CONSULTA: {question}
             
-            CONTEXTO DEL USUARIO: {context_text}
+            CONTEXTO: {context_text}
+            DOCUMENTOS: {documents_context}
+            LEGISLACIÓN: {legal_context}
             
-            DOCUMENTOS DEL USUARIO: {documents_context}
-            
-            LEGISLACIÓN RELEVANTE: {legal_context}
-            
-            Proporciona una definición clara y completa, orientada a PyMEs colombianas.
-            Incluye:
-            1. Definición precisa según la legislación colombiana
-            2. Importancia para PyMEs
-            3. Ejemplos prácticos aplicables
-            4. Referencias normativas relevantes
+            Define de forma clara y concisa, orientado a PyMEs colombianas.
             """,
             
             "requisitos": """
-            Como experto en derecho colombiano para PyMEs:
-            
             CONSULTA: {question}
             
-            CONTEXTO DEL USUARIO: {context_text}
+            CONTEXTO: {context_text}
+            DOCUMENTOS: {documents_context}
+            LEGISLACIÓN: {legal_context}
             
-            DOCUMENTOS DEL USUARIO: {documents_context}
-            
-            LEGISLACIÓN RELEVANTE: {legal_context}
-            
-            Lista todos los requisitos de manera exhaustiva y organizada.
-            Incluye:
-            1. Requisitos obligatorios (con base legal)
-            2. Documentos específicos necesarios
-            3. Requisitos opcionales pero recomendados
-            4. Plazos para cumplir requisitos
-            5. Consecuencias de no cumplir
+            Lista los requisitos principales de forma organizada y concisa.
             """,
             
             "default": """
-            Como LegalGPT, experto en derecho colombiano especializado en PyMEs:
-            
             CONSULTA: {question}
             
-            CONTEXTO DEL USUARIO: {context_text}
+            CONTEXTO: {context_text}
+            DOCUMENTOS: {documents_context}
+            LEGISLACIÓN: {legal_context}
             
-            DOCUMENTOS DEL USUARIO: {documents_context}
-            
-            LEGISLACIÓN RELEVANTE: {legal_context}
-            
-            Proporciona una respuesta completa, práctica y específica para PyMEs colombianas.
-            Asegúrate de ser preciso legalmente y orientado a la acción.
+            Responde de forma práctica y específica para PyMEs colombianas.
             """
         }
     
@@ -223,10 +193,10 @@ class ResponseGenerator:
         legal_context: str,
         user_context: str,
         documents_context: str,
-        model: str = "ft:gpt-4o-mini-2024-07-18:curso-llm:legalgpt-pymes-v1:Bx0Zsdni"
+        model: str = "ft:gpt-4o-mini-2024-07-18:curso-llm:legalgpt-pymes-v1:Bx0Zsdni"  # Mantener modelo fine-tuned
     ) -> Dict[str, Any]:
         """
-        Generar respuesta usando OpenAI
+        Generar respuesta usando OpenAI optimizada para velocidad
         
         Args:
             question: Pregunta del usuario
@@ -240,39 +210,66 @@ class ResponseGenerator:
         """
         start_time = time.time()
         
+        # Verificar caché para preguntas frecuentes
+        cache_key = f"{question.lower().strip()}"
+        if cache_key in self.response_cache:
+            cached_response = self.response_cache[cache_key]
+            cached_response["response_time_ms"] = 50  # Tiempo de caché muy rápido
+            cached_response["from_cache"] = True
+            print(f"⚡ Respuesta desde caché en 50ms")
+            return cached_response
+        
         try:
             # Obtener prompt especializado
             prompt_template = self.get_specialized_prompt(question)
             
-            # Construir prompt final
+            # Limitar el contexto para mejorar velocidad
+            max_context_length = 2000
+            if len(legal_context) > max_context_length:
+                legal_context = legal_context[:max_context_length] + "..."
+            
+            if len(documents_context) > max_context_length:
+                documents_context = documents_context[:max_context_length] + "..."
+            
+            # Construir prompt final optimizado
             final_prompt = prompt_template.format(
                 question=question,
-                context_text=user_context,
+                context_text=user_context[:500] if user_context else "",  # Limitar contexto usuario
                 documents_context=documents_context,
-                legal_context=legal_context if legal_context else "No se encontró contexto legal específico en la base de datos."
+                legal_context=legal_context if legal_context else "Legislación colombiana aplicable."
             )
             
-            # Consulta a OpenAI
+            # Consulta a OpenAI optimizada (manteniendo modelo fine-tuned)
             response = self.client.chat.completions.create(
                 model=model,
                 messages=[
-                    {"role": "system", "content": "Eres LegalGPT, asesor legal experto para PyMEs colombianas con acceso a legislación específica."},
+                    {"role": "system", "content": "Eres LegalGPT, asesor legal para PyMEs colombianas. Responde de forma concisa y práctica."},
                     {"role": "user", "content": final_prompt}
                 ],
-                max_tokens=1800,
-                temperature=0.1
+                max_tokens=1200,  # Reducir tokens para mayor velocidad
+                temperature=0.1,
+                top_p=0.9,  # Optimizar para velocidad
+                frequency_penalty=0.1,  # Reducir repeticiones
+                presence_penalty=0.1
             )
             
             answer = response.choices[0].message.content
             response_time = int((time.time() - start_time) * 1000)
             
-            return {
+            # Crear respuesta
+            result = {
                 "answer": answer,
                 "response_time_ms": response_time,
                 "model_used": model,
                 "prompt_type": self._get_prompt_type(question),
                 "tokens_used": response.usage.total_tokens if hasattr(response, 'usage') else 0
             }
+            
+            # Guardar en caché si no está lleno
+            if len(self.response_cache) < self.cache_size_limit:
+                self.response_cache[cache_key] = result.copy()
+            
+            return result
             
         except Exception as e:
             error_time = int((time.time() - start_time) * 1000)

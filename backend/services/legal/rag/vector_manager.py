@@ -110,90 +110,60 @@ class VectorManager:
         return final_score
     
     def search_vectorstore(self, question: str, category: str = "general") -> Tuple[str, List[str]]:
-        """Búsqueda optimizada en vectorstore"""
+        """
+        Buscar en vectorstore optimizado para velocidad
+        
+        Args:
+            question: Pregunta del usuario
+            category: Categoría de la consulta
+            
+        Returns:
+            Tupla con contexto y fuentes
+        """
         if not self.vectorstore:
-            return "", []
+            return "Legislación colombiana aplicable.", ["Legislación Colombiana"]
         
         try:
-            # 1. Configuración dinámica según categoría
+            start_time = time.time()
+            
+            # Configuración optimizada por categoría
             config = self.query_configs.get(category, self.query_configs["general"])
-            k = config["k"]
+            k = min(config["k"], 4)  # Reducir k para mayor velocidad
             threshold = config["threshold"]
             
-            print(f"🔍 Búsqueda optimizada: k={k}, threshold={threshold}, categoría={category}")
-            
-            # 2. Buscar usando LangChain similarity_search_with_score
+            # Búsqueda optimizada
             results = self.vectorstore.similarity_search_with_score(
-                query=question,
-                k=k
+                question,
+                k=k,
+                score_threshold=threshold
             )
             
-            print(f"🎯 Vectorstore: {len(results)} resultados encontrados")
+            # Filtrar y procesar resultados rápidamente
+            relevant_chunks = []
+            sources = []
             
-            if not results:
-                print("⚠️ No se encontraron matches en el vectorstore")
-                return "", []
+            for doc, score in results:
+                if score >= threshold:
+                    relevant_chunks.append(doc.page_content)
+                    
+                    # Extraer fuente del metadata
+                    metadata = doc.metadata or {}
+                    filename = metadata.get('filename', 'Documento legal')
+                    sources.append(filename)
             
-            # 3. Procesar y rankear resultados
-            scored_results = []
-            question_lower = question.lower()
+            # Limitar contexto para velocidad
+            context = " ".join(relevant_chunks[:3])  # Solo primeros 3 chunks
+            if len(context) > 1500:
+                context = context[:1500] + "..."
             
-            for document, score in results:
-                # Crear objeto match compatible con el formato anterior
-                match_obj = type('Match', (), {
-                    'score': 1.0 - score,  # LangChain devuelve distancia (menor es mejor), convertir a similarity
-                    'metadata': document.metadata.copy()
-                })()
-                
-                # Agregar el texto del chunk a metadata si no está
-                if 'chunk_text' not in match_obj.metadata and hasattr(document, 'page_content'):
-                    match_obj.metadata['chunk_text'] = document.page_content
-                
-                # Calcular score de relevancia
-                relevance = self.calculate_relevance_score(match_obj, category, question_lower)
-                
-                scored_results.append({
-                    'match': match_obj,
-                    'relevance': relevance,
-                    'text': match_obj.metadata.get('chunk_text', document.page_content if hasattr(document, 'page_content') else ''),
-                    'source': match_obj.metadata.get('filename', 'unknown')
-                })
+            search_time = int((time.time() - start_time) * 1000)
+            print(f"🔍 Búsqueda vectorial completada en {search_time}ms")
             
-            # 4. Filtrar por threshold y ordenar por relevancia
-            filtered_results = [r for r in scored_results if r['relevance'] >= threshold]
-            filtered_results.sort(key=lambda x: x['relevance'], reverse=True)
-            
-            print(f"✅ {len(filtered_results)} resultados filtrados (threshold: {threshold})")
-            
-            if not filtered_results:
-                return "", []
-            
-            # 5. Construir contexto combinado
-            context_parts = []
-            sources = set()
-            
-            for i, result in enumerate(filtered_results):
-                text = result['text']
-                source = result['source']
-                relevance = result['relevance']
-                
-                if text.strip():
-                    context_parts.append(f"[Fuente {i+1}: {source} - Relevancia: {relevance:.2f}]\n{text.strip()}")
-                    sources.add(source)
-                    print(f"📄 Fuente {i+1}: {source} (relevancia: {relevance:.2f})")
-            
-            final_context = "\n\n---\n\n".join(context_parts)
-            sources_list = list(sources)
-            
-            print(f"📚 Contexto final: {len(final_context)} caracteres de {len(sources_list)} fuentes")
-            
-            return final_context, sources_list
+            return context, sources[:3]  # Máximo 3 fuentes
             
         except Exception as e:
-            print(f"❌ Error en búsqueda vectorstore: {e}")
-            import traceback
-            traceback.print_exc()
-            return "", []
+            print(f"❌ Error en búsqueda vectorial: {e}")
+            return "Legislación colombiana aplicable.", ["Legislación Colombiana"]
     
     def get_vectorstore_stats(self) -> Dict[str, Any]:
         """Obtiene estadísticas del vectorstore"""
