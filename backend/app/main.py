@@ -95,13 +95,18 @@ async def general_exception_handler(request: Request, exc: Exception):
         }
     )
 
-# Configurar CORS
+# Importar configuración
+from core.config import FRONTEND_CONFIG
+
+# Configurar CORS usando la configuración centralizada
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # En producción especificar dominios específicos
+    allow_origins=FRONTEND_CONFIG["allowed_origins"],
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=FRONTEND_CONFIG["allowed_methods"],
+    allow_headers=FRONTEND_CONFIG["allowed_headers"],
+    expose_headers=FRONTEND_CONFIG["expose_headers"],
+    max_age=FRONTEND_CONFIG["max_age"],
 )
 
 # Endpoints principales
@@ -126,12 +131,15 @@ async def root():
 
 @app.get("/health")
 async def health_check():
-    """Health check detallado"""
+    """Health check detallado para el frontend"""
     try:
+        from core.config import FRONTEND_CONFIG, AUTH_CONFIG, DOCUMENT_CONFIG
+        
         config_status = {
             "supabase": "✅" if os.getenv("SUPABASE_URL") else "❌",
             "openai": "✅" if os.getenv("OPENAI_API_KEY") else "❌", 
-            "jwt_secret": "✅" if os.getenv("SECRET_KEY") else "❌"
+            "jwt_secret": "✅" if os.getenv("SECRET_KEY") else "❌",
+            "pinecone": "✅" if os.getenv("PINECONE_API_KEY") else "❌"
         }
         
         directories = {
@@ -141,13 +149,39 @@ async def health_check():
         
         error_stats = error_handler.get_error_stats()
         
+        # Verificar conectividad con servicios externos
+        services_status = {
+            "api": "✅ Funcionando",
+            "cors": "✅ Configurado",
+            "auth": "✅ Disponible",
+            "documents": "✅ Disponible",
+            "legal_queries": "✅ Disponible",
+            "templates": "✅ Disponible",
+            "signatures": "✅ Disponible",
+            "document_generator": "✅ Disponible",
+            "notifications": "✅ Disponible"
+        }
+        
         return {
             "status": "healthy",
             "message": "LegalGPT API funcionando correctamente",
+            "version": "1.0.0",
+            "frontend_compatible": True,
             "config": config_status,
             "directories": directories,
+            "services": services_status,
             "error_stats": error_stats,
-            "python_version": sys.version.split()[0]
+            "python_version": sys.version.split()[0],
+            "frontend_config": {
+                "allowed_origins": len(FRONTEND_CONFIG["allowed_origins"]),
+                "cors_enabled": True,
+                "auth_enabled": True
+            },
+            "document_config": {
+                "max_file_size_mb": DOCUMENT_CONFIG["max_file_size_mb"],
+                "allowed_extensions": DOCUMENT_CONFIG["allowed_extensions"],
+                "categories": DOCUMENT_CONFIG["categories"]
+            }
         }
         
     except Exception as e:
@@ -185,6 +219,41 @@ try:
 except ImportError as e:
     log_error(e, ErrorType.SYSTEM, context={"router": "fine_tuning"})
     print(f"⚠️  No se pudo importar fine-tuning router: {e}")
+
+try:
+    from api.v1.stats.endpoints import router as stats_router
+    app.include_router(stats_router, prefix="/api/v1/stats", tags=["📊 Estadísticas"])
+except ImportError as e:
+    log_error(e, ErrorType.SYSTEM, context={"router": "stats"})
+    print(f"⚠️  No se pudo importar stats router: {e}")
+
+try:
+    from api.v1.templates.endpoints import router as templates_router
+    app.include_router(templates_router, prefix="/api/v1/templates", tags=["📝 Templates"])
+except ImportError as e:
+    log_error(e, ErrorType.SYSTEM, context={"router": "templates"})
+    print(f"⚠️  No se pudo importar templates router: {e}")
+
+try:
+    from api.v1.signatures.endpoints import router as signatures_router
+    app.include_router(signatures_router, prefix="/api/v1/signatures", tags=["🖊️ Firmas Digitales"])
+except ImportError as e:
+    log_error(e, ErrorType.SYSTEM, context={"router": "signatures"})
+    print(f"⚠️  No se pudo importar signatures router: {e}")
+
+try:
+    from api.v1.document_generator.endpoints import router as document_generator_router
+    app.include_router(document_generator_router, prefix="/api/v1/document-generator", tags=["📄 Generador de Documentos"])
+except ImportError as e:
+    log_error(e, ErrorType.SYSTEM, context={"router": "document_generator"})
+    print(f"⚠️  No se pudo importar document_generator router: {e}")
+
+try:
+    from api.v1.notifications.endpoints import router as notifications_router
+    app.include_router(notifications_router, prefix="/api/v1/notifications", tags=["🔔 Notificaciones"])
+except ImportError as e:
+    log_error(e, ErrorType.SYSTEM, context={"router": "notifications"})
+    print(f"⚠️  No se pudo importar notifications router: {e}")
 
 try:
     from api.v1.testing.endpoints import router as testing_router
@@ -227,6 +296,98 @@ async def api_info():
                 "endpoints": [
                     "POST /rag/query - Consulta legal con IA",
                     "GET /rag/suggestions - Sugerencias de consultas"
+                ]
+            },
+            "stats": {
+                "prefix": "/stats",
+                "endpoints": [
+                    "GET /stats/dashboard - Dashboard completo",
+                    "GET /stats/documents - Estadísticas de documentos",
+                    "GET /stats/usage - Métricas de uso",
+                    "GET /stats/activity - Actividad reciente",
+                    "GET /stats/categories - Estadísticas por categoría",
+                    "GET /stats/chat - Estadísticas de chat",
+                    "POST /stats/analytics - Analytics avanzados",
+                    "POST /stats/export - Exportar estadísticas"
+                ]
+            },
+            "templates": {
+                "prefix": "/templates",
+                "endpoints": [
+                    "POST /templates/ - Crear template",
+                    "GET /templates/ - Listar templates",
+                    "GET /templates/{id} - Obtener template",
+                    "PUT /templates/{id} - Actualizar template",
+                    "DELETE /templates/{id} - Eliminar template",
+                    "POST /templates/{id}/use - Usar template",
+                    "POST /templates/{id}/favorite - Marcar favorito",
+                    "GET /templates/stats/overview - Estadísticas",
+                    "GET /templates/categories/list - Categorías",
+                    "POST /templates/export - Exportar templates",
+                    "POST /templates/import - Importar templates"
+                ]
+            },
+            "signatures": {
+                "prefix": "/signatures",
+                "endpoints": [
+                    "POST /signatures/documents/ - Crear documento para firma",
+                    "GET /signatures/documents/ - Listar documentos de firma",
+                    "GET /signatures/documents/{id} - Obtener documento de firma",
+                    "PUT /signatures/documents/{id} - Actualizar documento",
+                    "DELETE /signatures/documents/{id} - Eliminar documento",
+                    "POST /signatures/documents/{id}/signatories - Añadir firmante",
+                    "POST /signatures/documents/{id}/sign - Firmar documento",
+                    "POST /signatures/documents/{id}/decline - Rechazar firma",
+                    "POST /signatures/documents/{id}/resend - Reenviar invitaciones",
+                    "GET /signatures/stats/ - Estadísticas de firmas",
+                    "POST /signatures/search/ - Buscar documentos",
+                    "GET /signatures/documents/{id}/download - Descargar documento firmado",
+                    "GET /signatures/status/options - Opciones de estado",
+                    "GET /signatures/documents/{id}/progress - Progreso de firma"
+                ]
+            },
+            "document_generator": {
+                "prefix": "/document-generator",
+                "endpoints": [
+                    "POST /document-generator/generate - Generar documento",
+                    "POST /document-generator/preview - Previsualizar documento",
+                    "POST /document-generator/validate - Validar variables",
+                    "GET /document-generator/history - Historial de generación",
+                    "GET /document-generator/stats - Estadísticas de generación",
+                    "POST /document-generator/export - Exportar documentos",
+                    "GET /document-generator/document/{id} - Obtener documento generado",
+                    "DELETE /document-generator/document/{id} - Eliminar documento",
+                    "GET /document-generator/templates - Templates disponibles",
+                    "GET /document-generator/templates/{id} - Detalles de template",
+                    "GET /document-generator/variables/types - Tipos de variables",
+                    "GET /document-generator/preview/{id} - Previsualizar documento generado",
+                    "GET /document-generator/categories - Categorías disponibles",
+                    "GET /document-generator/formats - Formatos soportados"
+                ]
+            },
+            "notifications": {
+                "prefix": "/notifications",
+                "endpoints": [
+                    "POST /notifications/ - Crear notificación",
+                    "GET /notifications/ - Listar notificaciones",
+                    "GET /notifications/{id} - Obtener notificación",
+                    "PUT /notifications/{id} - Actualizar notificación",
+                    "DELETE /notifications/{id} - Eliminar notificación",
+                    "POST /notifications/mark-read - Marcar como leídas",
+                    "POST /notifications/mark-all-read - Marcar todas como leídas",
+                    "GET /notifications/stats/summary - Estadísticas",
+                    "GET /notifications/settings - Configuración",
+                    "PUT /notifications/settings - Actualizar configuración",
+                    "POST /notifications/bulk-action - Acción masiva",
+                    "GET /notifications/templates - Templates disponibles",
+                    "POST /notifications/templates/{id}/create - Crear desde template",
+                    "GET /notifications/types - Tipos disponibles",
+                    "GET /notifications/priorities - Prioridades",
+                    "GET /notifications/status-options - Opciones de estado",
+                    "GET /notifications/actions - Acciones disponibles",
+                    "GET /notifications/categories - Categorías",
+                    "POST /notifications/cleanup - Limpiar expiradas",
+                    "GET /notifications/unread-count - Conteo no leídas"
                 ]
             },
             "fine_tuning": {

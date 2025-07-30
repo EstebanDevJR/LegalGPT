@@ -3,18 +3,25 @@ from typing import Optional, List
 from datetime import datetime
 
 class DocumentResponse(BaseModel):
-    """Respuesta con información de documento"""
+    """Respuesta con información de documento compatible con el frontend"""
     id: str
     filename: str
     original_name: str
     file_type: str
     file_size: int
     upload_date: str
-    status: str  # "processing", "ready", "error"
+    status: str  # "processing", "ready", "error", "completed", "draft", "review"
     page_count: Optional[int] = None
     content_preview: Optional[str] = None
     content_length: Optional[int] = None
     description: Optional[str] = None
+    
+    # Campos adicionales para compatibilidad con el frontend
+    name: Optional[str] = None  # Nombre amigable del documento
+    type: Optional[str] = None  # Tipo de documento (ej: "Contrato Laboral")
+    category: Optional[str] = None  # Categoría (ej: "Laboral", "Societario", "Tributario")
+    size: Optional[str] = None  # Tamaño en formato legible (ej: "245 KB")
+    createdAt: Optional[str] = None  # Fecha de creación en formato frontend
     
     class Config:
         json_schema_extra = {
@@ -29,7 +36,12 @@ class DocumentResponse(BaseModel):
                 "page_count": 5,
                 "content_preview": "CONTRATO DE PRESTACIÓN DE SERVICIOS...",
                 "content_length": 2500,
-                "description": "Contrato de servicios de desarrollo web"
+                "description": "Contrato de servicios de desarrollo web",
+                "name": "Contrato de Trabajo - Juan Pérez",
+                "type": "Contrato Laboral",
+                "category": "Laboral",
+                "size": "1024 KB",
+                "createdAt": "2024-01-15"
             }
         }
 
@@ -53,7 +65,12 @@ class DocumentListResponse(BaseModel):
                         "status": "ready",
                         "page_count": 5,
                         "content_preview": "CONTRATO DE PRESTACIÓN...",
-                        "content_length": 2500
+                        "content_length": 2500,
+                        "name": "Contrato de Trabajo - Juan Pérez",
+                        "type": "Contrato Laboral",
+                        "category": "Laboral",
+                        "size": "1024 KB",
+                        "createdAt": "2024-01-15"
                     }
                 ],
                 "total_count": 1,
@@ -65,12 +82,16 @@ class DocumentUploadRequest(BaseModel):
     """Modelo para datos adicionales en la subida de documentos"""
     description: Optional[str] = None
     category: Optional[str] = None  # "contrato", "ley", "reglamento", "otro"
+    name: Optional[str] = None  # Nombre amigable del documento
+    type: Optional[str] = None  # Tipo de documento
     
     class Config:
         json_schema_extra = {
             "example": {
                 "description": "Contrato de servicios de desarrollo web",
-                "category": "contrato"
+                "category": "contrato",
+                "name": "Contrato de Trabajo - Juan Pérez",
+                "type": "Contrato Laboral"
             }
         }
 

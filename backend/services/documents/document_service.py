@@ -94,7 +94,9 @@ class DocumentService:
                 hash_md5.update(chunk)
         return hash_md5.hexdigest()
 
-    async def process_document(self, file: UploadFile, user_id: str, description: Optional[str] = None) -> Dict[str, Any]:
+    async def process_document(self, file: UploadFile, user_id: str, description: Optional[str] = None, 
+                             name: Optional[str] = None, category: Optional[str] = None, 
+                             type: Optional[str] = None) -> Dict[str, Any]:
         """Procesar y guardar documento - Ahora usando Supabase"""
         try:
             # Validar archivo
@@ -159,7 +161,11 @@ class DocumentService:
                 "content_preview": content[:500] if content else None,  # Solo primeros 500 chars
                 "page_count": page_count,
                 "word_count": word_count,
-                "document_category": description
+                "document_category": description,
+                # Campos adicionales para el frontend
+                "name": name,
+                "category": category,
+                "type": type
             }
             
             result = supabase.table('uploaded_documents').insert(doc_data).execute()
@@ -178,6 +184,9 @@ class DocumentService:
             document["description"] = description
             document["upload_date"] = document["created_at"]
             document["status"] = "ready" if processing_status == "completed" else "error"
+            # Agregar campos adicionales para compatibilidad con el frontend
+            document["original_name"] = file.filename
+            document["id"] = document.get("id", str(uuid.uuid4()))
             
             return document
             

@@ -1,10 +1,18 @@
-from fastapi import APIRouter, HTTPException, Depends
-from models.rag import QueryRequest, QueryResponse, QuerySuggestionsResponse, QueryExamplesResponse
+from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Form
+from fastapi.responses import StreamingResponse
+from models.rag import (
+    QueryRequest, QueryResponse, QuerySuggestionsResponse, QueryExamplesResponse,
+    ChatRequest, ChatResponse, ChatMessage, StreamingChatResponse, ChatHistoryResponse
+)
 from services.legal.rag import rag_service
+from services.legal.chat_service import chat_service
 from services.documents.document_service import document_service
 from services.auth.auth_service import get_current_user_optional
 from services.monitoring.usage_service import usage_service
 import time
+import json
+import uuid
+from datetime import datetime
 from models.rag import QuerySuggestion
 
 router = APIRouter()
@@ -118,6 +126,414 @@ async def make_legal_query(
             category="Error",
             suggestions=[],
             tokens_used=0
+        )
+
+@router.post("/chat", response_model=ChatResponse)
+async def chat_with_ai(
+    message: str = Form(...),
+    file: UploadFile = File(None),
+    use_uploaded_docs: bool = Form(True),
+    current_user: dict = Depends(get_current_user_optional)
+):
+    """
+    💬 Chat con IA legal (compatible con frontend)
+    
+    Endpoint para chat interactivo con soporte para archivos.
+    Compatible con el componente ChatInterface del frontend.
+    """
+    
+    if len(message) > 1000:
+        raise HTTPException(
+            status_code=400,
+            detail="El mensaje no puede exceder 1000 caracteres"
+        )
+    
+    # Verificar límites de uso si está autenticado
+    if current_user:
+        try:
+            usage_limits = await usage_service.check_usage_limits(current_user["id"])
+            if usage_limits.is_daily_exceeded:
+                raise HTTPException(
+                    status_code=429,
+                    detail=f"Has excedido el límite diario de {usage_limits.daily_limit} consultas."
+                )
+        except Exception as e:
+            print(f"⚠️ Error verificando límites: {e}")
+    
+    # Procesar archivo si se subió
+    file_info = None
+    if file:
+        try:
+            file_content = await file.read()
+            file_info = await chat_service.process_file_in_chat(
+                file_content=file_content,
+                file_name=file.filename,
+                file_type=file.content_type
+            )
+            print(f"📄 Archivo procesado: {file.filename} ({len(file_content)} bytes)")
+        except Exception as e:
+            print(f"⚠️ Error procesando archivo: {e}")
+            raise HTTPException(
+                status_code=400,
+                detail=f"Error procesando archivo: {str(e)}"
+            )
+    
+    # Obtener documentos del usuario
+    user_documents = []
+    if current_user and use_uploaded_docs:
+        try:
+            user_documents = document_service.get_user_documents(current_user["id"])
+            user_documents = [doc for doc in user_documents if doc.get("status") == "ready"][:3]
+        except Exception as e:
+            print(f"⚠️ Error obteniendo documentos: {e}")
+    
+    try:
+        # Realizar consulta usando el servicio RAG
+        result = await rag_service.query(
+            question=message,
+            context=f"Archivo adjunto: {file_info['name'] if file_info else 'Ninguno'}",
+            user_info=current_user,
+            user_documents=user_documents
+        )
+        
+        # Crear mensaje de respuesta
+        assistant_message = ChatMessage(
+            id=str(uuid.uuid4()),
+            content=result.get("answer", "No se pudo generar una respuesta."),
+            sender="assistant",
+            timestamp=datetime.now().isoformat(),
+            type="legal-advice"
+        )
+        
+        # Guardar mensajes en el historial si está autenticado
+        if current_user:
+            try:
+                # Guardar mensaje del usuario
+                user_message = ChatMessage(
+                    id=str(uuid.uuid4()),
+                    content=message,
+                    sender="user",
+                    timestamp=datetime.now().isoformat(),
+                    type="text",
+                    fileName=file_info["name"] if file_info else None
+                )
+                await chat_service.save_message(current_user["id"], user_message)
+                
+                # Guardar respuesta del asistente
+                await chat_service.save_message(current_user["id"], assistant_message)
+                
+            except Exception as e:
+                print(f"⚠️ Error guardando mensajes: {e}")
+        
+        # Generar sugerencias relacionadas
+        suggestions = []
+        if result.get("related_queries"):
+            suggestions = result["related_queries"][:2]
+        else:
+            # Obtener sugerencias del servicio de chat
+            suggestions = await chat_service.get_suggestions(
+                current_user["id"] if current_user else "anonymous",
+                context=message
+            )
+        
+        # Registrar uso si está autenticado
+        if current_user:
+            try:
+                await usage_service.record_usage(
+                    user_id=current_user["id"],
+                    query_text=message,
+                    response_time=0,  # Se calcularía en implementación real
+                    tokens_used=result.get("tokens_used", 0)
+                )
+            except Exception as e:
+                print(f"⚠️ Error registrando uso: {e}")
+        
+        return ChatResponse(
+            message=assistant_message,
+            suggestions=suggestions,
+            confidence=result.get("confidence", 0.5),
+            sources=result.get("sources", [])
+        )
+        
+    except Exception as e:
+        print(f"❌ Error en endpoint chat: {e}")
+        
+        error_message = ChatMessage(
+            id=str(uuid.uuid4()),
+            content="Lo siento, ocurrió un error al procesar tu consulta. Por favor intenta nuevamente.",
+            sender="assistant",
+            timestamp=datetime.now().isoformat(),
+            type="text"
+        )
+        
+        return ChatResponse(
+            message=error_message,
+            suggestions=[],
+            confidence=0.0,
+            sources=[]
+        )
+
+@router.post("/chat/stream")
+async def chat_stream(
+    message: str = Form(...),
+    file: UploadFile = File(None),
+    use_uploaded_docs: bool = Form(True),
+    current_user: dict = Depends(get_current_user_optional)
+):
+    """
+    💬 Chat con streaming (para respuestas en tiempo real)
+    
+    Endpoint para chat con respuestas en streaming.
+    Compatible con el frontend para respuestas en tiempo real.
+    """
+    
+    if len(message) > 1000:
+        raise HTTPException(
+            status_code=400,
+            detail="El mensaje no puede exceder 1000 caracteres"
+        )
+    
+    # Verificar límites de uso si está autenticado
+    if current_user:
+        try:
+            usage_limits = await usage_service.check_usage_limits(current_user["id"])
+            if usage_limits.is_daily_exceeded:
+                raise HTTPException(
+                    status_code=429,
+                    detail=f"Has excedido el límite diario de {usage_limits.daily_limit} consultas."
+                )
+        except Exception as e:
+            print(f"⚠️ Error verificando límites: {e}")
+    
+    # Procesar archivo si se subió
+    file_info = None
+    if file:
+        try:
+            file_content = await file.read()
+            file_info = await chat_service.process_file_in_chat(
+                file_content=file_content,
+                file_name=file.filename,
+                file_type=file.content_type
+            )
+            print(f"📄 Archivo procesado en streaming: {file.filename}")
+        except Exception as e:
+            print(f"⚠️ Error procesando archivo: {e}")
+            raise HTTPException(
+                status_code=400,
+                detail=f"Error procesando archivo: {str(e)}"
+            )
+    
+    # Obtener documentos del usuario
+    user_documents = []
+    if current_user and use_uploaded_docs:
+        try:
+            user_documents = document_service.get_user_documents(current_user["id"])
+            user_documents = [doc for doc in user_documents if doc.get("status") == "ready"][:3]
+        except Exception as e:
+            print(f"⚠️ Error obteniendo documentos: {e}")
+    
+    message_id = str(uuid.uuid4())
+    
+    async def generate_stream():
+        try:
+            # Crear respuesta usando el servicio de chat
+            response_text = await chat_service.create_streaming_response(message, file_info)
+            
+            # Dividir la respuesta en chunks para simular streaming
+            words = response_text.split()
+            chunk_size = 3
+            chunks = [' '.join(words[i:i+chunk_size]) for i in range(0, len(words), chunk_size)]
+            
+            for i, chunk in enumerate(chunks):
+                is_complete = i == len(chunks) - 1
+                
+                stream_response = StreamingChatResponse(
+                    content=chunk + (" " if not is_complete else ""),
+                    is_complete=is_complete,
+                    message_id=message_id,
+                    confidence=0.8 if is_complete else None
+                )
+                
+                yield f"data: {json.dumps(stream_response.dict())}\n\n"
+                
+                # Simular delay para streaming real
+                import asyncio
+                await asyncio.sleep(0.1)
+            
+            # Guardar en historial si está autenticado
+            if current_user:
+                try:
+                    # Guardar mensaje del usuario
+                    user_message = ChatMessage(
+                        id=str(uuid.uuid4()),
+                        content=message,
+                        sender="user",
+                        timestamp=datetime.now().isoformat(),
+                        type="text",
+                        fileName=file_info["name"] if file_info else None
+                    )
+                    await chat_service.save_message(current_user["id"], user_message)
+                    
+                    # Guardar respuesta del asistente
+                    assistant_message = ChatMessage(
+                        id=message_id,
+                        content=response_text,
+                        sender="assistant",
+                        timestamp=datetime.now().isoformat(),
+                        type="legal-advice"
+                    )
+                    await chat_service.save_message(current_user["id"], assistant_message)
+                    
+                except Exception as e:
+                    print(f"⚠️ Error guardando mensajes en streaming: {e}")
+            
+        except Exception as e:
+            print(f"❌ Error en streaming: {e}")
+            error_response = StreamingChatResponse(
+                content="Lo siento, ocurrió un error al procesar tu consulta.",
+                is_complete=True,
+                message_id=message_id,
+                confidence=0.0
+            )
+            yield f"data: {json.dumps(error_response.dict())}\n\n"
+    
+    return StreamingResponse(
+        generate_stream(),
+        media_type="text/plain",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "Content-Type": "text/event-stream"
+        }
+    )
+
+@router.get("/chat/history", response_model=ChatHistoryResponse)
+async def get_chat_history(
+    limit: int = 50,
+    current_user: dict = Depends(get_current_user_optional)
+):
+    """
+    📜 Obtener historial de chat del usuario
+    
+    Retorna el historial de mensajes de chat del usuario autenticado.
+    """
+    
+    if not current_user:
+        raise HTTPException(
+            status_code=401,
+            detail="Se requiere autenticación para acceder al historial"
+        )
+    
+    try:
+        history = await chat_service.get_chat_history(
+            user_id=current_user["id"],
+            limit=limit
+        )
+        
+        return history
+        
+    except Exception as e:
+        print(f"❌ Error obteniendo historial: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Error al obtener el historial de chat"
+        )
+
+@router.delete("/chat/history")
+async def clear_chat_history(
+    current_user: dict = Depends(get_current_user_optional)
+):
+    """
+    🗑️ Limpiar historial de chat del usuario
+    
+    Elimina todo el historial de mensajes de chat del usuario autenticado.
+    """
+    
+    if not current_user:
+        raise HTTPException(
+            status_code=401,
+            detail="Se requiere autenticación para limpiar el historial"
+        )
+    
+    try:
+        success = await chat_service.clear_chat_history(current_user["id"])
+        
+        if success:
+            return {
+                "message": "Historial de chat eliminado correctamente",
+                "user_id": current_user["id"]
+            }
+        else:
+            raise HTTPException(
+                status_code=404,
+                detail="No se encontró historial para limpiar"
+            )
+        
+    except Exception as e:
+        print(f"❌ Error limpiando historial: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Error al limpiar el historial de chat"
+        )
+
+@router.get("/chat/suggestions")
+async def get_chat_suggestions(
+    context: str = None,
+    current_user: dict = Depends(get_current_user_optional)
+):
+    """
+    💡 Obtener sugerencias de chat
+    
+    Retorna sugerencias personalizadas basadas en el contexto del usuario.
+    """
+    
+    try:
+        user_id = current_user["id"] if current_user else "anonymous"
+        suggestions = await chat_service.get_suggestions(user_id, context)
+        
+        return {
+            "suggestions": suggestions,
+            "context": context,
+            "total": len(suggestions)
+        }
+        
+    except Exception as e:
+        print(f"❌ Error obteniendo sugerencias: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Error al obtener sugerencias"
+        )
+
+@router.get("/chat/stats")
+async def get_chat_stats(
+    current_user: dict = Depends(get_current_user_optional)
+):
+    """
+    📊 Obtener estadísticas del chat
+    
+    Retorna estadísticas del uso del chat del usuario autenticado.
+    """
+    
+    if not current_user:
+        raise HTTPException(
+            status_code=401,
+            detail="Se requiere autenticación para acceder a las estadísticas"
+        )
+    
+    try:
+        stats = await chat_service.get_chat_stats(current_user["id"])
+        
+        return {
+            "user_id": current_user["id"],
+            "stats": stats,
+            "timestamp": datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        print(f"❌ Error obteniendo estadísticas: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Error al obtener estadísticas del chat"
         )
 
 @router.get("/suggestions", response_model=QuerySuggestionsResponse)

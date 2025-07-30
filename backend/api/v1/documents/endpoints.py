@@ -1,249 +1,376 @@
-from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Form
-from typing import Optional
-from models.documents import DocumentResponse, DocumentListResponse, SupportedFormatsResponse
+from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Form, Query, Request
+from fastapi.responses import FileResponse
+from typing import List, Optional
+from models.documents import DocumentResponse, DocumentListResponse, DocumentUploadRequest, SupportedFormatsResponse
 from services.documents.document_service import document_service
-from services.auth.auth_service import get_current_user
+from services.auth.auth_service import get_current_user, get_current_user_optional
+from services.auth.auth_middleware import require_auth, require_usage_check
+from core.config import DOCUMENT_CONFIG
+import os
 
 router = APIRouter()
 
-@router.post("/upload", response_model=DocumentResponse)
-async def upload_document(
-    file: UploadFile = File(...),
-    description: Optional[str] = Form(None),
+@router.get("/list", response_model=DocumentListResponse)
+@require_auth(["can_upload_documents"])
+async def list_documents(
+    request: Request,
+    category: Optional[str] = Query(None, description="Filtrar por categoría"),
+    status: Optional[str] = Query(None, description="Filtrar por estado"),
+    search: Optional[str] = Query(None, description="Buscar en documentos"),
     current_user: dict = Depends(get_current_user)
 ):
-    """
-    📄 Subir documento legal (PDF, TXT, DOCX)
-    
-    Sube contratos, leyes o documentos legales para análisis personalizado.
-    Los documentos se procesan automáticamente para extraer texto.
-    
-    **Formatos soportados:**
-    - **PDF**: Contratos, leyes, documentos legales escaneados
-    - **TXT**: Textos legales simples en formato de texto
-    - **DOCX**: Documentos de Word (próximamente)
-    
-    **Límites:**
-    - Tamaño máximo: 10MB por archivo
-    - Formatos permitidos: PDF, TXT, DOCX
-    - Sin límite en cantidad de archivos
-    
-    **Procesamiento automático:**
-    - Extracción de texto completo
-    - Conteo de páginas (para PDFs)
-    - Indexación para búsquedas rápidas
-    - Detección de tipo de documento
-    """
-    # Procesar documento usando el servicio
-    processed_doc = await document_service.process_document(
-        file=file,
-        user_id=current_user["id"],
-        description=description
-    )
-    
-    # Preparar respuesta
-    content_preview = ""
-    if processed_doc.get("content"):
-        content = processed_doc["content"]
-        content_preview = content[:200] + "..." if len(content) > 200 else content
-    
-    return DocumentResponse(
-        id=processed_doc["id"],
-        filename=processed_doc["filename"],
-        original_name=processed_doc["original_name"],
-        file_type=processed_doc["file_type"],
-        file_size=processed_doc["file_size"],
-        upload_date=processed_doc["upload_date"],
-        status=processed_doc["status"],
-        page_count=processed_doc.get("page_count"),
-        content_preview=content_preview,
-        content_length=processed_doc.get("content_length", 0),
-        description=processed_doc.get("description")
-    )
-
-@router.get("/list", response_model=DocumentListResponse)
-async def list_user_documents(current_user: dict = Depends(get_current_user)):
     """
     📄 Listar documentos del usuario
     
-    Obtiene todos los documentos subidos por el usuario actual,
-    incluyendo información sobre el estado de procesamiento y
-    estadísticas de uso de almacenamiento.
-    
-    **Estados de documentos:**
-    - `processing`: Documento siendo procesado
-    - `ready`: Listo para usar en consultas
-    - `error`: Error en el procesamiento
+    Retorna la lista de documentos subidos por el usuario autenticado,
+    con opciones de filtrado por categoría, estado y búsqueda.
     """
-    # Obtener documentos del usuario
-    user_docs = document_service.get_user_documents(current_user["id"])
-    
-    # Preparar lista de respuestas
-    documents = []
-    total_size = 0
-    
-    for doc in user_docs:
-        total_size += doc.get("file_size", 0)
+    try:
+        # Obtener documentos del usuario
+        documents = await document_service.get_user_documents(
+            user_id=current_user["id"],
+            category=category,
+            status=status,
+            search=search
+        )
         
-        # Preparar preview del contenido
-        content_preview = ""
-        if doc.get("content"):
-            content = doc["content"]
-            content_preview = content[:200] + "..." if len(content) > 200 else content
+        # Transformar datos para el frontend
+        transformed_documents = []
+        for doc in documents:
+            transformed_documents.append({
+                "id": doc["id"],
+                "name": doc.get("original_name", doc.get("name", "Documento sin nombre")),
+                "type": doc.get("type", "pdf"),
+                "category": doc.get("category", "general"),
+                "size": f"{doc.get('size', 0) / 1024:.1f} KB",
+                "createdAt": doc.get("created_at", ""),
+                "status": doc.get("status", "completed")
+            })
         
-        documents.append(DocumentResponse(
-            id=doc["id"],
-            filename=doc["filename"],
-            original_name=doc["original_name"],
-            file_type=doc["file_type"],
-            file_size=doc["file_size"],
-            upload_date=doc["upload_date"],
-            status=doc["status"],
-            page_count=doc.get("page_count"),
-            content_preview=content_preview,
-            content_length=doc.get("content_length", 0),
-            description=doc.get("description")
-        ))
+        return DocumentListResponse(
+            documents=transformed_documents,
+            total=len(transformed_documents),
+            user_id=current_user["id"]
+        )
+        
+    except Exception as e:
+        print(f"❌ Error listando documentos: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Error obteniendo documentos"
+        )
+
+@router.post("/upload", response_model=DocumentResponse)
+@require_auth(["can_upload_documents"])
+@require_usage_check("upload_document")
+async def upload_document(
+    request: Request,
+    file: UploadFile = File(...),
+    name: Optional[str] = Form(None),
+    category: Optional[str] = Form("general"),
+    type: Optional[str] = Form(None),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    📄 Subir documento
     
-    return DocumentListResponse(
-        documents=documents,
-        total_count=len(documents),
-        total_size_mb=total_size / (1024 * 1024)
+    Permite al usuario subir un documento para análisis legal.
+    Soporta múltiples formatos y categorías.
+    """
+    try:
+        # Validar tipo de archivo
+        allowed_extensions = DOCUMENT_CONFIG["allowed_extensions"]
+        file_extension = f".{file.filename.split('.')[-1].lower()}"
+        
+        if file_extension not in allowed_extensions:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Tipo de archivo no permitido. Permitidos: {', '.join(allowed_extensions)}"
+            )
+        
+        # Validar tamaño del archivo
+        max_size = DOCUMENT_CONFIG["max_file_size_mb"] * 1024 * 1024
+        file_content = await file.read()
+        
+        if len(file_content) > max_size:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Archivo demasiado grande. Máximo {DOCUMENT_CONFIG['max_file_size_mb']}MB"
+            )
+        
+        # Generar nombre amigable si no se proporciona
+        if not name:
+            name = file.filename.rsplit('.', 1)[0]
+        
+        # Determinar tipo de documento
+        if not type:
+            type = file_extension[1:].upper()
+        
+        # Procesar documento
+        document = await document_service.process_document(
+            user_id=current_user["id"],
+            file_content=file_content,
+            original_name=file.filename,
+            name=name,
+            category=category,
+            type=type
+        )
+        
+        # Preparar respuesta
+        return DocumentResponse(
+            id=document["id"],
+            name=document.get("original_name", name),
+            type=type,
+            category=category,
+            size=f"{len(file_content) / 1024:.1f} KB",
+            createdAt=document.get("created_at", ""),
+            status=document.get("status", "completed")
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error subiendo documento: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Error procesando documento"
+        )
+
+@router.get("/search")
+@require_auth(["can_upload_documents"])
+async def search_documents(
+    request: Request,
+    q: str = Query(..., description="Término de búsqueda"),
+    category: Optional[str] = Query(None),
+    status: Optional[str] = Query(None),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    🔍 Buscar documentos
+    
+    Permite buscar documentos por contenido, nombre o metadatos.
+    """
+    try:
+        documents = await document_service.search_documents(
+            user_id=current_user["id"],
+            query=q,
+            category=category,
+            status=status
+        )
+        
+        # Transformar resultados
+        results = []
+        for doc in documents:
+            results.append({
+                "id": doc["id"],
+                "name": doc.get("original_name", doc.get("name", "Documento sin nombre")),
+                "type": doc.get("type", "pdf"),
+                "category": doc.get("category", "general"),
+                "size": f"{doc.get('size', 0) / 1024:.1f} KB",
+                "createdAt": doc.get("created_at", ""),
+                "status": doc.get("status", "completed"),
+                "relevance": doc.get("relevance", 0.0)
+            })
+        
+        return {
+            "documents": results,
+            "total": len(results),
+            "query": q
+        }
+        
+    except Exception as e:
+        print(f"❌ Error buscando documentos: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Error en la búsqueda"
+        )
+
+@router.get("/download/{document_id}")
+@require_auth(["can_upload_documents"])
+async def download_document(
+    request: Request,
+    document_id: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    📥 Descargar documento
+    
+    Permite descargar un documento específico del usuario.
+    """
+    try:
+        # Verificar que el documento pertenece al usuario
+        document = await document_service.get_document(
+            document_id=document_id,
+            user_id=current_user["id"]
+        )
+        
+        if not document:
+            raise HTTPException(
+                status_code=404,
+                detail="Documento no encontrado"
+            )
+        
+        # Obtener ruta del archivo
+        file_path = document.get("file_path")
+        if not file_path or not os.path.exists(file_path):
+            raise HTTPException(
+                status_code=404,
+                detail="Archivo no encontrado"
+            )
+        
+        # Retornar archivo
+        return FileResponse(
+            path=file_path,
+            filename=document.get("original_name", "documento.pdf"),
+            media_type="application/octet-stream"
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error descargando documento: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Error descargando documento"
+        )
+
+@router.post("/share/{document_id}")
+@require_auth(["can_share_documents"])
+async def share_document(
+    request: Request,
+    document_id: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    🔗 Compartir documento
+    
+    Genera un enlace temporal para compartir el documento.
+    """
+    try:
+        # Verificar que el documento pertenece al usuario
+        document = await document_service.get_document(
+            document_id=document_id,
+            user_id=current_user["id"]
+        )
+        
+        if not document:
+            raise HTTPException(
+                status_code=404,
+                detail="Documento no encontrado"
+            )
+        
+        # Generar token de compartir (implementación básica)
+        share_token = f"share_{document_id}_{current_user['id']}"
+        
+        return {
+            "share_token": share_token,
+            "share_url": f"/api/v1/documents/shared/{share_token}",
+            "expires_at": "2024-12-31T23:59:59Z",  # En implementación real, calcular
+            "document_name": document.get("original_name", "Documento")
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error compartiendo documento: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Error compartiendo documento"
+        )
+
+@router.get("/shared/{share_token}")
+async def get_shared_document(share_token: str):
+    """
+    📄 Obtener documento compartido
+    
+    Permite acceder a un documento compartido mediante token.
+    """
+    try:
+        # En implementación real, verificar token y obtener documento
+        # Por ahora, retornar error de no implementado
+        raise HTTPException(
+            status_code=501,
+            detail="Funcionalidad de documentos compartidos no implementada"
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error obteniendo documento compartido: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Error obteniendo documento compartido"
+        )
+
+@router.get("/categories", response_model=List[str])
+async def get_document_categories():
+    """
+    📂 Obtener categorías de documentos
+    
+    Retorna la lista de categorías disponibles para documentos.
+    """
+    return DOCUMENT_CONFIG["categories"]
+
+@router.get("/status-options", response_model=List[str])
+async def get_document_status_options():
+    """
+    📊 Obtener opciones de estado
+    
+    Retorna la lista de estados disponibles para documentos.
+    """
+    return DOCUMENT_CONFIG["status_options"]
+
+@router.get("/supported-formats", response_model=SupportedFormatsResponse)
+async def get_supported_formats():
+    """
+    📋 Obtener formatos soportados
+    
+    Retorna la lista de formatos de archivo soportados.
+    """
+    return SupportedFormatsResponse(
+        formats=DOCUMENT_CONFIG["allowed_extensions"],
+        max_size_mb=DOCUMENT_CONFIG["max_file_size_mb"]
     )
 
 @router.get("/{document_id}", response_model=DocumentResponse)
-async def get_document_details(
+@require_auth(["can_upload_documents"])
+async def get_document(
+    request: Request,
     document_id: str,
     current_user: dict = Depends(get_current_user)
 ):
     """
-    📄 Obtener detalles de un documento específico
+    📄 Obtener documento específico
     
-    Obtiene información detallada sobre un documento,
-    incluyendo un preview más extenso del contenido.
+    Retorna los detalles de un documento específico del usuario.
     """
-    # Obtener documento
-    doc = document_service.get_document_by_id(document_id, current_user["id"])
-    
-    if not doc:
-        raise HTTPException(
-            status_code=404,
-            detail="Documento no encontrado o no tienes permisos para acceder a él"
+    try:
+        document = await document_service.get_document(
+            document_id=document_id,
+            user_id=current_user["id"]
         )
-    
-    # Preparar preview extendido
-    content_preview = ""
-    if doc.get("content"):
-        content = doc["content"]
-        content_preview = content[:500] + "..." if len(content) > 500 else content
-    
-    return DocumentResponse(
-        id=doc["id"],
-        filename=doc["filename"],
-        original_name=doc["original_name"],
-        file_type=doc["file_type"],
-        file_size=doc["file_size"],
-        upload_date=doc["upload_date"],
-        status=doc["status"],
-        page_count=doc.get("page_count"),
-        content_preview=content_preview,
-        content_length=doc.get("content_length", 0),
-        description=doc.get("description")
-    )
-
-@router.delete("/{document_id}")
-async def delete_user_document(
-    document_id: str,
-    current_user: dict = Depends(get_current_user)
-):
-    """
-    📄 Eliminar documento del usuario
-    
-    Elimina un documento tanto del almacenamiento físico
-    como de la base de datos. Esta acción no se puede deshacer.
-    
-    **Consideraciones:**
-    - El archivo se elimina permanentemente
-    - Las consultas previas que usaron este documento no se ven afectadas
-    - Se libera el espacio de almacenamiento
-    """
-    success = document_service.delete_document(document_id, current_user["id"])
-    
-    if not success:
-        raise HTTPException(
-            status_code=404,
-            detail="Documento no encontrado o no tienes permisos para eliminarlo"
+        
+        if not document:
+            raise HTTPException(
+                status_code=404,
+                detail="Documento no encontrado"
+            )
+        
+        return DocumentResponse(
+            id=document["id"],
+            name=document.get("original_name", document.get("name", "Documento sin nombre")),
+            type=document.get("type", "pdf"),
+            category=document.get("category", "general"),
+            size=f"{document.get('size', 0) / 1024:.1f} KB",
+            createdAt=document.get("created_at", ""),
+            status=document.get("status", "completed")
         )
-    
-    return {
-        "message": "Documento eliminado correctamente",
-        "document_id": document_id,
-        "status": "deleted",
-        "action": "permanent_deletion"
-    }
-
-@router.get("/formats", response_model=SupportedFormatsResponse)
-async def get_supported_formats():
-    """
-    📄 Obtener formatos de archivo soportados
-    
-    Información detallada sobre los tipos de archivo que
-    puedes subir y sus características específicas.
-    
-    **Capacidades por formato:**
-    - **PDF**: Extracción de texto, conteo de páginas, análisis de estructura
-    - **TXT**: Lectura directa, análisis de contenido
-    - **DOCX**: Próximamente - Extracción de texto con formato
-    """
-    formats_info = document_service.get_supported_formats()
-    return SupportedFormatsResponse(**formats_info)
-
-@router.get("/stats")
-async def get_document_stats(current_user: dict = Depends(get_current_user)):
-    """
-    📊 Estadísticas de documentos del usuario
-    
-    Obtiene estadísticas detalladas sobre los documentos
-    subidos por el usuario.
-    """
-    user_docs = document_service.get_user_documents(current_user["id"])
-    
-    # Calcular estadísticas
-    total_docs = len(user_docs)
-    total_size = sum(doc.get("file_size", 0) for doc in user_docs)
-    
-    # Contar por estado
-    status_count = {"ready": 0, "processing": 0, "error": 0}
-    for doc in user_docs:
-        status = doc.get("status", "error")
-        if status in status_count:
-            status_count[status] += 1
-    
-    # Contar por tipo
-    type_count = {}
-    for doc in user_docs:
-        file_type = doc.get("file_type", "unknown")
-        type_count[file_type] = type_count.get(file_type, 0) + 1
-    
-    # Calcular páginas totales (solo PDFs)
-    total_pages = sum(doc.get("page_count", 0) for doc in user_docs if doc.get("page_count"))
-    
-    return {
-        "user": {
-            "id": current_user["id"],
-            "company_type": current_user.get("company_type", "micro")
-        },
-        "documents": {
-            "total_count": total_docs,
-            "total_size_mb": round(total_size / (1024 * 1024), 2),
-            "total_pages": total_pages,
-            "by_status": status_count,
-            "by_type": type_count
-        },
-        "usage": {
-            "storage_used_mb": round(total_size / (1024 * 1024), 2),
-            "storage_limit_mb": "Ilimitado",
-            "ready_for_queries": status_count["ready"]
-        },
-        "last_updated": user_docs[-1]["upload_date"] if user_docs else None
-    } 
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error obteniendo documento: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Error obteniendo documento"
+        ) 
