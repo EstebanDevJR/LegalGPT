@@ -1,7 +1,17 @@
 from fastapi import APIRouter, HTTPException
 from services.monitoring.error_handler import log_error, ErrorType, ErrorSeverity
+from .cache import cache_router
+from .rate_limiting import rate_limiting_router
+from .logging import logging_router
+from .database import database_router
 
 router = APIRouter()
+
+# Incluir routers de administración
+router.include_router(cache_router)
+router.include_router(rate_limiting_router)
+router.include_router(logging_router)
+router.include_router(database_router)
 
 @router.get("/errors")
 async def get_error_stats():

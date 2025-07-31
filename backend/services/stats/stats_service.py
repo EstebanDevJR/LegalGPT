@@ -21,6 +21,7 @@ from services.monitoring.usage_service import usage_service
 from services.auth.auth_service import auth_service
 from services.documents.document_service import document_service
 from services.legal.chat_service import chat_service
+from services.cache import cache_result, cache_service
 from core.config import STATS_CONFIG
 
 class StatsService:
@@ -31,6 +32,7 @@ class StatsService:
         self.stats_cache = {}
         self.cache_duration = 300  # 5 minutos
     
+    @cache_result(ttl=300, key_prefix="dashboard")
     async def get_dashboard_stats(self, user_id: str) -> DashboardResponse:
         """
         📊 Obtener estadísticas completas del dashboard
@@ -81,6 +83,7 @@ class StatsService:
             print(f"❌ Error obteniendo estadísticas del dashboard: {e}")
             raise
     
+    @cache_result(ttl=180, key_prefix="main_stats")
     async def _get_main_stats(self, user_id: str) -> DashboardStats:
         """Obtener estadísticas principales"""
         try:
@@ -121,6 +124,7 @@ class StatsService:
                 favorite_category="N/A"
             )
     
+    @cache_result(ttl=300, key_prefix="category_stats")
     async def _get_category_stats(self, user_id: str) -> List[CategoryStats]:
         """Obtener estadísticas por categoría"""
         try:

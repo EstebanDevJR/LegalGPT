@@ -98,6 +98,22 @@ async def general_exception_handler(request: Request, exc: Exception):
 # Importar configuración
 from core.config import FRONTEND_CONFIG
 
+# Importar servicios
+from services.auth.auth_service import auth_service
+from services.documents.document_service import document_service
+from services.legal.llm_chain import legal_chain
+from services.legal.chat_service import chat_service
+from services.stats.stats_service import stats_service
+from services.templates.template_service import template_service
+from services.signatures.signature_service import signature_service
+from services.document_generator.document_generator_service import document_generator_service
+from services.notifications.notification_service import notification_service
+from services.export.export_service import export_service
+from services.cache import cache_service
+from services.rate_limiting import rate_limiter
+from services.logging import logger_service
+from services.database import db_optimizer
+
 # Configurar CORS usando la configuración centralizada
 app.add_middleware(
     CORSMiddleware,
@@ -148,6 +164,9 @@ async def health_check():
         }
         
         error_stats = error_handler.get_error_stats()
+        cache_stats = cache_service.get_stats()
+        rate_limiting_stats = rate_limiter.get_stats()
+        logging_stats = logger_service.get_stats()
         
         # Verificar conectividad con servicios externos
         services_status = {
@@ -159,7 +178,12 @@ async def health_check():
             "templates": "✅ Disponible",
             "signatures": "✅ Disponible",
             "document_generator": "✅ Disponible",
-            "notifications": "✅ Disponible"
+            "notifications": "✅ Disponible",
+            "export": "✅ Disponible",
+            "cache": "✅ Disponible",
+            "rate_limiting": "✅ Disponible",
+            "logging": "✅ Disponible",
+            "database_optimizer": "✅ Disponible"
         }
         
         return {
@@ -171,6 +195,9 @@ async def health_check():
             "directories": directories,
             "services": services_status,
             "error_stats": error_stats,
+            "cache_stats": cache_stats,
+            "rate_limiting_stats": rate_limiting_stats,
+            "logging_stats": logging_stats,
             "python_version": sys.version.split()[0],
             "frontend_config": {
                 "allowed_origins": len(FRONTEND_CONFIG["allowed_origins"]),
@@ -254,6 +281,13 @@ try:
 except ImportError as e:
     log_error(e, ErrorType.SYSTEM, context={"router": "notifications"})
     print(f"⚠️  No se pudo importar notifications router: {e}")
+
+try:
+    from api.v1.export.endpoints import export_router
+    app.include_router(export_router, prefix="/api/v1/export", tags=["📤 Exportación"])
+except ImportError as e:
+    log_error(e, ErrorType.SYSTEM, context={"router": "export"})
+    print(f"⚠️  No se pudo importar export router: {e}")
 
 try:
     from api.v1.testing.endpoints import router as testing_router
@@ -390,6 +424,32 @@ async def api_info():
                     "GET /notifications/unread-count - Conteo no leídas"
                 ]
             },
+            "export": {
+                "prefix": "/export",
+                "endpoints": [
+                    "POST /export/ - Crear exportación",
+                    "GET /export/progress/{task_id} - Progreso de exportación",
+                    "GET /export/result/{task_id} - Resultado de exportación",
+                    "GET /export/download/{task_id} - Descargar archivo",
+                    "GET /export/history - Historial de exportaciones",
+                    "GET /export/stats - Estadísticas de exportaciones",
+                    "POST /export/validate - Validar solicitud",
+                    "POST /export/templates - Crear plantilla",
+                    "GET /export/templates - Listar plantillas",
+                    "GET /export/templates/{id} - Obtener plantilla",
+                    "PUT /export/templates/{id} - Actualizar plantilla",
+                    "DELETE /export/templates/{id} - Eliminar plantilla",
+                    "POST /export/bulk - Exportación masiva",
+                    "GET /export/formats - Formatos soportados",
+                    "GET /export/types - Tipos de exportación",
+                    "GET /export/templates/default - Plantillas por defecto",
+                    "POST /export/templates/{id}/use - Usar plantilla",
+                    "POST /export/cleanup - Limpiar expiradas",
+                    "GET /export/status - Estado del servicio",
+                    "GET /export/estimate/{type} - Estimar exportación",
+                    "GET /export/recent - Exportaciones recientes"
+                ]
+            },
             "fine_tuning": {
                 "prefix": "/fine-tuning",
                 "endpoints": [
@@ -412,6 +472,59 @@ async def api_info():
                 "endpoints": [
                     "GET /admin/errors - Estadísticas de errores",
                     "POST /admin/init-database - Configurar base de datos"
+                ]
+            },
+            "cache": {
+                "prefix": "/admin/cache",
+                "endpoints": [
+                    "GET /admin/cache/stats - Estadísticas del caché",
+                    "POST /admin/cache/clear - Limpiar caché",
+                    "DELETE /admin/cache/key/{key} - Eliminar clave específica",
+                    "GET /admin/cache/keys - Listar claves del caché",
+                    "GET /admin/cache/key/{key}/info - Información de clave",
+                    "POST /admin/cache/invalidate-pattern - Invalidar por patrón",
+                    "GET /admin/cache/health - Salud del caché"
+                ]
+            },
+            "rate_limiting": {
+                "prefix": "/admin/rate-limiting",
+                "endpoints": [
+                    "GET /admin/rate-limiting/stats - Estadísticas del rate limiting",
+                    "POST /admin/rate-limiting/reset-stats - Reiniciar estadísticas",
+                    "POST /admin/rate-limiting/clear-all - Limpiar todos los límites",
+                    "GET /admin/rate-limiting/blocked-users - Listar usuarios bloqueados",
+                    "GET /admin/rate-limiting/blocked-ips - Listar IPs bloqueadas",
+                    "DELETE /admin/rate-limiting/unblock-user/{user_id} - Desbloquear usuario",
+                    "DELETE /admin/rate-limiting/unblock-ip/{ip_address} - Desbloquear IP",
+                    "GET /admin/rate-limiting/config - Configuración actual",
+                    "GET /admin/rate-limiting/health - Salud del rate limiting"
+                ]
+            },
+            "logging": {
+                "prefix": "/admin/logging",
+                "endpoints": [
+                    "GET /admin/logging/stats - Estadísticas del sistema de logging",
+                    "GET /admin/logging/export - Exportar logs filtrados",
+                    "POST /admin/logging/clear - Limpiar archivos de log",
+                    "GET /admin/logging/levels - Niveles de logging disponibles",
+                    "GET /admin/logging/categories - Categorías de logging disponibles",
+                    "GET /admin/logging/files - Información de archivos de log",
+                    "GET /admin/logging/recent - Logs recientes",
+                    "GET /admin/logging/health - Salud del sistema de logging",
+                    "POST /admin/logging/test - Generar log de prueba"
+                ]
+            },
+            "database": {
+                "prefix": "/admin/database",
+                "endpoints": [
+                    "GET /admin/database/stats - Estadísticas de consultas",
+                    "GET /admin/database/slow-queries - Consultas lentas",
+                    "POST /admin/database/optimize-table - Optimizar tabla específica",
+                    "POST /admin/database/batch-query - Ejecutar consultas en lote",
+                    "GET /admin/database/performance-metrics - Métricas de performance",
+                    "POST /admin/database/clear-query-cache - Limpiar caché de consultas",
+                    "GET /admin/database/health - Salud del optimizador",
+                    "GET /admin/database/query-patterns - Analizar patrones de consultas"
                 ]
             }
         },

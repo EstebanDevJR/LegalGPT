@@ -270,6 +270,40 @@ DOCUMENT_GENERATOR_CONFIG = {
     "enable_validation": os.getenv("DOC_GEN_ENABLE_VALIDATION", "true").lower() == "true"
 }
 
+# Configuración de exportación de datos
+EXPORT_CONFIG = {
+    "max_file_size_mb": int(os.getenv("EXPORT_MAX_FILE_SIZE_MB", "50")),
+    "max_records_per_export": int(os.getenv("EXPORT_MAX_RECORDS", "50000")),
+    "supported_formats": ["json", "csv", "xml"],
+    "compression_enabled": os.getenv("EXPORT_COMPRESSION_ENABLED", "true").lower() == "true",
+    "include_metadata_default": os.getenv("EXPORT_INCLUDE_METADATA_DEFAULT", "true").lower() == "true",
+    "expiration_days": int(os.getenv("EXPORT_EXPIRATION_DAYS", "7")),
+    "max_concurrent_exports": int(os.getenv("EXPORT_MAX_CONCURRENT", "5")),
+    "progress_update_interval": int(os.getenv("EXPORT_PROGRESS_INTERVAL", "2")),  # segundos
+    "cleanup_interval_hours": int(os.getenv("EXPORT_CLEANUP_INTERVAL_HOURS", "24")),
+    "max_templates_per_user": int(os.getenv("EXPORT_MAX_TEMPLATES_PER_USER", "20")),
+    "bulk_export_limit": int(os.getenv("EXPORT_BULK_LIMIT", "10")),
+    "estimate_enabled": os.getenv("EXPORT_ESTIMATE_ENABLED", "true").lower() == "true",
+    "validation_enabled": os.getenv("EXPORT_VALIDATION_ENABLED", "true").lower() == "true",
+    "default_templates_enabled": os.getenv("EXPORT_DEFAULT_TEMPLATES_ENABLED", "true").lower() == "true",
+    "admin_only_cleanup": os.getenv("EXPORT_ADMIN_ONLY_CLEANUP", "true").lower() == "true",
+    "supported_export_types": [
+        "documents", "chat_history", "templates", "signatures", 
+        "statistics", "user_activity", "notifications", "generated_documents", "all_data"
+    ],
+    "export_type_limits": {
+        "documents": 10000,
+        "chat_history": 50000,
+        "templates": 1000,
+        "signatures": 5000,
+        "statistics": 100,
+        "user_activity": 20000,
+        "notifications": 30000,
+        "generated_documents": 5000,
+        "all_data": 100000
+    }
+}
+
 # Configuración de backup
 BACKUP_CONFIG = {
     "enabled": os.getenv("BACKUP_ENABLED", "False").lower() == "true",
@@ -284,4 +318,106 @@ CICD_CONFIG = {
     "version": APP_CONFIG["version"],
     "deployment_url": os.getenv("DEPLOYMENT_URL"),
     "github_webhook_secret": os.getenv("GITHUB_WEBHOOK_SECRET")
+}
+
+# Configuración de caché
+CACHE_CONFIG = {
+    "default_ttl": int(os.getenv("CACHE_DEFAULT_TTL", "300")),  # 5 minutos
+    "max_size": int(os.getenv("CACHE_MAX_SIZE", "1000")),       # Máximo 1000 elementos
+    "cleanup_interval": int(os.getenv("CACHE_CLEANUP_INTERVAL", "60")),  # Limpiar cada 60 segundos
+    "strategies": {
+        "memory": os.getenv("CACHE_MEMORY_ENABLED", "true").lower() == "true",
+        "redis": os.getenv("CACHE_REDIS_ENABLED", "false").lower() == "true",   # Para futuras implementaciones
+        "disk": os.getenv("CACHE_DISK_ENABLED", "false").lower() == "true"      # Para futuras implementaciones
+    },
+    "features": {
+        "auto_cleanup": os.getenv("CACHE_AUTO_CLEANUP", "true").lower() == "true",
+        "stats_tracking": os.getenv("CACHE_STATS_TRACKING", "true").lower() == "true",
+        "pattern_invalidation": os.getenv("CACHE_PATTERN_INVALIDATION", "true").lower() == "true",
+        "health_monitoring": os.getenv("CACHE_HEALTH_MONITORING", "true").lower() == "true"
+    },
+    "ttl_presets": {
+        "short": int(os.getenv("CACHE_TTL_SHORT", "60")),       # 1 minuto
+        "medium": int(os.getenv("CACHE_TTL_MEDIUM", "300")),    # 5 minutos
+        "long": int(os.getenv("CACHE_TTL_LONG", "1800")),       # 30 minutos
+        "very_long": int(os.getenv("CACHE_TTL_VERY_LONG", "3600")) # 1 hora
+    }
+}
+
+# Configuración de logging
+LOGGING_CONFIG = {
+    "default_level": os.getenv("LOGGING_DEFAULT_LEVEL", "INFO"),
+    "log_dir": os.getenv("LOGGING_DIR", "backend/logs"),
+    "max_file_size_mb": int(os.getenv("LOGGING_MAX_FILE_SIZE_MB", "10")),
+    "backup_count": int(os.getenv("LOGGING_BACKUP_COUNT", "5")),
+    "rotation_interval": os.getenv("LOGGING_ROTATION_INTERVAL", "daily"),
+    "formats": {
+        "detailed": os.getenv("LOGGING_DETAILED_FORMAT", "true").lower() == "true",
+        "include_context": os.getenv("LOGGING_INCLUDE_CONTEXT", "true").lower() == "true",
+        "include_stack_trace": os.getenv("LOGGING_INCLUDE_STACK_TRACE", "true").lower() == "true"
+    },
+    "files": {
+        "main": os.getenv("LOGGING_MAIN_FILE", "legalgpt.log"),
+        "errors": os.getenv("LOGGING_ERRORS_FILE", "errors.log"),
+        "debug": os.getenv("LOGGING_DEBUG_FILE", "debug.log"),
+        "performance": os.getenv("LOGGING_PERFORMANCE_FILE", "performance.log")
+    },
+    "categories": {
+        "auth": os.getenv("LOGGING_AUTH_ENABLED", "true").lower() == "true",
+        "documents": os.getenv("LOGGING_DOCUMENTS_ENABLED", "true").lower() == "true",
+        "chat": os.getenv("LOGGING_CHAT_ENABLED", "true").lower() == "true",
+        "templates": os.getenv("LOGGING_TEMPLATES_ENABLED", "true").lower() == "true",
+        "signatures": os.getenv("LOGGING_SIGNATURES_ENABLED", "true").lower() == "true",
+        "export": os.getenv("LOGGING_EXPORT_ENABLED", "true").lower() == "true",
+        "cache": os.getenv("LOGGING_CACHE_ENABLED", "true").lower() == "true",
+        "rate_limiting": os.getenv("LOGGING_RATE_LIMITING_ENABLED", "true").lower() == "true",
+        "api": os.getenv("LOGGING_API_ENABLED", "true").lower() == "true",
+        "security": os.getenv("LOGGING_SECURITY_ENABLED", "true").lower() == "true",
+        "performance": os.getenv("LOGGING_PERFORMANCE_ENABLED", "true").lower() == "true"
+    },
+    "performance": {
+        "track_response_times": os.getenv("LOGGING_TRACK_RESPONSE_TIMES", "true").lower() == "true",
+        "track_memory_usage": os.getenv("LOGGING_TRACK_MEMORY_USAGE", "true").lower() == "true",
+        "track_error_rates": os.getenv("LOGGING_TRACK_ERROR_RATES", "true").lower() == "true"
+    },
+    "export": {
+        "max_export_size": int(os.getenv("LOGGING_MAX_EXPORT_SIZE", "10000")),
+        "export_formats": ["json", "csv", "txt"],
+        "retention_days": int(os.getenv("LOGGING_RETENTION_DAYS", "30"))
+    }
+}
+
+# Configuración de optimización de base de datos
+DATABASE_CONFIG = {
+    "query_cache_enabled": os.getenv("DB_QUERY_CACHE_ENABLED", "true").lower() == "true",
+    "query_cache_ttl": int(os.getenv("DB_QUERY_CACHE_TTL", "300")),  # 5 minutos
+    "slow_query_threshold": float(os.getenv("DB_SLOW_QUERY_THRESHOLD", "1.0")),  # 1 segundo
+    "max_query_complexity": os.getenv("DB_MAX_QUERY_COMPLEXITY", "complex"),
+    "batch_query_limit": int(os.getenv("DB_BATCH_QUERY_LIMIT", "50")),
+    "performance_monitoring": os.getenv("DB_PERFORMANCE_MONITORING", "true").lower() == "true",
+    "auto_optimization": os.getenv("DB_AUTO_OPTIMIZATION", "true").lower() == "true",
+    "query_pattern_analysis": os.getenv("DB_QUERY_PATTERN_ANALYSIS", "true").lower() == "true",
+    "max_metrics_history": int(os.getenv("DB_MAX_METRICS_HISTORY", "1000")),
+    "monitoring_interval": int(os.getenv("DB_MONITORING_INTERVAL", "300")),  # 5 minutos
+    "index_suggestions": os.getenv("DB_INDEX_SUGGESTIONS", "true").lower() == "true",
+    "connection_pool_size": int(os.getenv("DB_CONNECTION_POOL_SIZE", "10")),
+    "query_timeout_seconds": int(os.getenv("DB_QUERY_TIMEOUT_SECONDS", "30")),
+    "max_concurrent_queries": int(os.getenv("DB_MAX_CONCURRENT_QUERIES", "100")),
+    "cache_strategies": {
+        "frequent_queries": os.getenv("DB_CACHE_FREQUENT_QUERIES", "true").lower() == "true",
+        "complex_queries": os.getenv("DB_CACHE_COMPLEX_QUERIES", "true").lower() == "true",
+        "aggregation_queries": os.getenv("DB_CACHE_AGGREGATION_QUERIES", "true").lower() == "true"
+    },
+    "optimization_features": {
+        "query_rewriting": os.getenv("DB_QUERY_REWRITING", "true").lower() == "true",
+        "index_hints": os.getenv("DB_INDEX_HINTS", "true").lower() == "true",
+        "partition_suggestions": os.getenv("DB_PARTITION_SUGGESTIONS", "true").lower() == "true",
+        "statistics_collection": os.getenv("DB_STATISTICS_COLLECTION", "true").lower() == "true"
+    },
+    "alerting": {
+        "slow_query_alerts": os.getenv("DB_SLOW_QUERY_ALERTS", "true").lower() == "true",
+        "high_error_rate_alerts": os.getenv("DB_HIGH_ERROR_RATE_ALERTS", "true").lower() == "true",
+        "cache_miss_alerts": os.getenv("DB_CACHE_MISS_ALERTS", "true").lower() == "true",
+        "connection_pool_alerts": os.getenv("DB_CONNECTION_POOL_ALERTS", "true").lower() == "true"
+    }
 }
